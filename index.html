@@ -10,6 +10,7 @@
     .card { padding: 20px; border-radius: 8px; min-width: 250px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #4285F4; color: white; border: none; border-radius: 4px; }
     button:hover { background-color: #357ae8; }
+    .error-card { background-color: #fca5a5; padding: 20px; border-radius: 8px; font-weight: bold; }
   </style>
   
   <script type="module">
@@ -29,8 +30,8 @@
       measurementId: "G-253KLPJYQS"
     };
     
-    // !!! IMPORTANT: CHANGE THIS TO YOUR ACTUAL TEACHER EMAIL !!!
-    const AUTHORIZED_TEACHER_EMAIL = "klynch@mtps.us"; 
+    // Convert to lowercase just in case Google passes a capitalized email
+    const AUTHORIZED_TEACHER_EMAIL = "klynch@mtps.us".toLowerCase(); 
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
@@ -57,32 +58,36 @@
     // Monitor Auth State
     onAuthStateChanged(auth, (user) => {
       if (user) {
-          if (user.email === AUTHORIZED_TEACHER_EMAIL) {
-              // Success! Show dashboard, hide login.
+          // Check email (case-insensitive)
+          if (user.email.toLowerCase() === AUTHORIZED_TEACHER_EMAIL) {
               loginScreen.style.display = "none";
               dashboardScreen.style.display = "block";
               startListeningToDatabase();
           } else {
-              // Wrong email. Boot them out.
               errorMsg.innerText = `Access Denied. ${user.email} is not authorized.`;
               signOut(auth);
           }
       } else {
-          // Logged out. Show login, hide dashboard.
           loginScreen.style.display = "flex";
           dashboardScreen.style.display = "none";
       }
     });
 
     function startListeningToDatabase() {
+        const grid = document.getElementById("student-grid");
+        
         onValue(ref(db, 'students'), (snapshot) => {
           const data = snapshot.val();
-          const grid = document.getElementById("student-grid");
-          grid.innerHTML = ""; 
+          grid.innerHTML = ""; // Clear the "Waiting for data" message
           
+          if (!data) {
+              grid.innerHTML = "<h3>No student data found in the database right now.</h3>";
+              return;
+          }
+
           const now = Date.now();
           
-          for (const [studentId, info] of Object.entries(data || {})) {
+          for (const [studentId, info] of Object.entries(data)) {
              const card = document.createElement("div");
              card.className = "card";
              const timeDiff = (now - info.lastPing) / 1000; 
@@ -99,6 +104,16 @@
              }
              grid.appendChild(card);
           }
+        }, (error) => {
+            // IF FIREBASE REJECTS THE READ, THIS WILL PRINT THE ERROR ON THE SCREEN
+            console.error("Database Read Error:", error);
+            grid.innerHTML = `
+                <div class="error-card">
+                    <h3>Database Connection Blocked</h3>
+                    <p>Firebase Error: ${error.message}</p>
+                    <p style="font-size:14px; margin-top:10px;">Please check your Firebase Realtime Database Security Rules.</p>
+                </div>
+            `;
         });
     }
     
