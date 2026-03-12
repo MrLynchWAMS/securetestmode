@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Teacher Dashboard - Secure Test Mode</title>
+  <style>
+    body { font-family: sans-serif; background-color: #f4f4f9; padding: 20px; }
+    #login-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
+    #dashboard-screen { display: none; } /* Hidden until logged in */
+    #student-grid { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 20px; }
+    .card { padding: 20px; border-radius: 8px; min-width: 250px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #4285F4; color: white; border: none; border-radius: 4px; }
+    button:hover { background-color: #357ae8; }
+  </style>
+  
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+    // --- CONFIGURATION ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyCkeqE6PBtZh8Jby_THkIyRZWgOMvWtzjU",
+      authDomain: "test-mode-fd991.firebaseapp.com",
+      databaseURL: "https://test-mode-fd991-default-rtdb.firebaseio.com",
+      projectId: "test-mode-fd991",
+      storageBucket: "test-mode-fd991.firebasestorage.app",
+      messagingSenderId: "801861873869",
+      appId: "1:801861873869:web:bbe8b850bc2730db553984",
+      measurementId: "G-253KLPJYQS"
+    };
+    
+    // !!! IMPORTANT: CHANGE THIS TO YOUR ACTUAL TEACHER EMAIL !!!
+    const AUTHORIZED_TEACHER_EMAIL = "teacher@yourschool.edu"; 
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+
+    // DOM Elements
+    const loginScreen = document.getElementById("login-screen");
+    const dashboardScreen = document.getElementById("dashboard-screen");
+    const loginBtn = document.getElementById("login-btn");
+    const logoutBtn = document.getElementById("logout-btn");
+    const errorMsg = document.getElementById("error-msg");
+
+    // Handle Login
+    loginBtn.addEventListener("click", () => {
+        signInWithPopup(auth, provider).catch(error => {
+            console.error("Login failed", error);
+        });
+    });
+
+    // Handle Logout
+    logoutBtn.addEventListener("click", () => signOut(auth));
+
+    // Monitor Auth State
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+          if (user.email === AUTHORIZED_TEACHER_EMAIL) {
+              // Success! Show dashboard, hide login.
+              loginScreen.style.display = "none";
+              dashboardScreen.style.display = "block";
+              startListeningToDatabase();
+          } else {
+              // Wrong email. Boot them out.
+              errorMsg.innerText = `Access Denied. ${user.email} is not authorized.`;
+              signOut(auth);
+          }
+      } else {
+          // Logged out. Show login, hide dashboard.
+          loginScreen.style.display = "flex";
+          dashboardScreen.style.display = "none";
+      }
+    });
+
+    function startListeningToDatabase() {
+        onValue(ref(db, 'students'), (snapshot) => {
+          const data = snapshot.val();
+          const grid = document.getElementById("student-grid");
+          grid.innerHTML = ""; 
+          
+          const now = Date.now();
+          
+          for (const [studentId, info] of Object.entries(data || {})) {
+             const card = document.createElement("div");
+             card.className = "card";
+             const timeDiff = (now - info.lastPing) / 1000; 
+             
+             if (info.status === "violation") {
+                 card.style.backgroundColor = "#fca5a5"; 
+                 card.innerHTML = `<h3>${studentId}</h3><p>❌ ${info.reason}</p>`;
+             } else if (timeDiff > 25) { 
+                 card.style.backgroundColor = "#fde047"; 
+                 card.innerHTML = `<h3>${studentId}</h3><p>⚠️ OFFLINE (${Math.round(timeDiff)}s)</p>`;
+             } else {
+                 card.style.backgroundColor = "#86efac"; 
+                 card.innerHTML = `<h3>${studentId}</h3><p>✅ Secure</p>`;
+             }
+             grid.appendChild(card);
+          }
+        });
+    }
+    
+    // Refresh offline logic periodically in case no new data comes in
+    setInterval(() => {
+        if(dashboardScreen.style.display === "block") {
+            const fakeEvent = new Event('resize'); 
+            window.dispatchEvent(fakeEvent);
+        }
+    }, 5000);
+  </script>
+</head>
+<body>
+
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen">
+      <h1>Secure Test Mode Dashboard</h1>
+      <p>Please sign in with your authorized teacher account.</p>
+      <button id="login-btn">Sign in with Google</button>
+      <p id="error-msg" style="color: red; margin-top: 15px;"></p>
+  </div>
+
+  <!-- MAIN DASHBOARD -->
+  <div id="dashboard-screen">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h1>Formative Live Monitoring</h1>
+          <button id="logout-btn" style="background-color: #555;">Log Out</button>
+      </div>
+      <div id="student-grid">Waiting for student data...</div>
+  </div>
+
+</body>
+</html>
