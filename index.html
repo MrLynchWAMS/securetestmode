@@ -73,9 +73,15 @@
     // Login via Popup
     loginBtn.addEventListener("click", () => {
         errorMsg.innerText = "Connecting to Google...";
+        errorMsg.style.color = "orange";
         signInWithPopup(auth, provider).catch(err => {
             console.error(err);
-            errorMsg.innerText = "Google Login failed: " + err.message;
+            if(err.message.includes("Cross-Origin")) {
+                errorMsg.innerText = "Your web server's COOP security headers blocked the Google Popup. Please use the Email login below.";
+            } else {
+                errorMsg.innerText = "Google Login failed: " + err.message;
+            }
+            errorMsg.style.color = "red";
         });
     });
 
@@ -85,12 +91,15 @@
         const password = document.getElementById("password-input").value;
         if(!email || !password) {
             errorMsg.innerText = "Please enter email and password.";
+            errorMsg.style.color = "red";
             return;
         }
         errorMsg.innerText = "Authenticating...";
+        errorMsg.style.color = "orange";
         signInWithEmailAndPassword(auth, email, password).catch(err => {
             console.error(err);
             errorMsg.innerText = "Email Login failed: " + err.message;
+            errorMsg.style.color = "red";
         });
     });
 
@@ -99,14 +108,20 @@
     // Auth Listener
     onAuthStateChanged(auth, (user) => {
       if (user) {
-          // FIX: Check if user.email actually exists before calling toLowerCase()
-          if (user.email && user.email.toLowerCase() === AUTHORIZED_TEACHER_EMAIL) {
-              document.getElementById("login-screen").style.display = "none";
-              document.getElementById("dashboard-screen").style.display = "block";
-              initDashboard();
+          if (user.email) {
+              if (user.email.toLowerCase() === AUTHORIZED_TEACHER_EMAIL) {
+                  document.getElementById("login-screen").style.display = "none";
+                  document.getElementById("dashboard-screen").style.display = "block";
+                  initDashboard();
+              } else {
+                  errorMsg.innerText = `Access Denied. You logged in as ${user.email}, but ${AUTHORIZED_TEACHER_EMAIL} is required.`;
+                  errorMsg.style.color = "red";
+                  signOut(auth); // Clear the wrong session
+              }
           } else {
-              errorMsg.innerText = "Access Denied. Invalid or missing email.";
-              signOut(auth); // Clear the broken ghost session
+              errorMsg.innerText = "Error: Ghost session detected. Clearing invalid login data.";
+              errorMsg.style.color = "red";
+              signOut(auth); // Clear the broken "- " ghost session
           }
       } else {
           document.getElementById("login-screen").style.display = "flex";
@@ -241,7 +256,7 @@
       <input type="password" id="password-input" class="login-input" placeholder="Password">
       <button id="email-login-btn" class="btn btn-gray" style="font-size: 16px; padding: 10px 24px; width: 250px; margin-top: 5px;">Sign in with Email</button>
 
-      <p id="error-msg" style="color: red; margin-top: 15px; max-width: 300px; text-align: center;"></p>
+      <p id="error-msg" style="color: red; margin-top: 15px; max-width: 300px; text-align: center; font-weight: bold;"></p>
   </div>
 
   <!-- DASHBOARD -->
