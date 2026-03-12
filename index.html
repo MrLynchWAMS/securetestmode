@@ -141,8 +141,13 @@
         // 1. Listen to Settings
         onValue(ref(db, 'settings'), (snapshot) => {
             const data = snapshot.val();
-            if (data && data.allowedExtensions) {
-                document.getElementById('extensions-input').value = data.allowedExtensions.join('\n');
+            if (data) {
+                if (data.allowedExtensions) {
+                    document.getElementById('extensions-input').value = data.allowedExtensions.join('\n');
+                }
+                if (data.allowedWebsites) {
+                    document.getElementById('websites-input').value = data.allowedWebsites.join('\n');
+                }
             }
         });
 
@@ -207,12 +212,21 @@
 
     // Settings Form Save
     window.saveSettings = function() {
-        const lines = document.getElementById('extensions-input').value.split('\n').filter(l => l.trim() !== '');
-        set(ref(db, 'settings/allowedExtensions'), lines).then(() => {
-            alert("Settings Saved! Extensions will update on their next ping.");
+        // .map(l => l.trim()) removes hidden spaces that break exact string matching!
+        const extLines = document.getElementById('extensions-input').value.split('\n').map(l => l.trim()).filter(l => l !== '');
+        const webLines = document.getElementById('websites-input').value.split('\n').map(l => l.trim()).filter(l => l !== '');
+        
+        update(ref(db, 'settings'), {
+            allowedExtensions: extLines,
+            allowedWebsites: webLines
+        }).then(() => {
+            alert("Settings Saved! Rules will update on their next ping.");
+        }).catch(e => {
+            alert("Error saving settings: " + e.message);
         });
     };
 
+    function logEvent(studentId, action) {
     function logEvent(studentId, action) {
         push(ref(db, 'logs'), {
             studentId: studentId,
@@ -224,18 +238,80 @@
     function renderLogs(data) {
         const tbody = document.getElementById("log-body");
         tbody.innerHTML = "";
-        // Sort newest first
-        const sortedLogs = Object.values(data).sort((a, b) => b.timestamp - a.timestamp);
         
-        sortedLogs.forEach(log => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-                <td>${new Date(log.timestamp).toLocaleTimeString()}</td>
-                <td><strong>${log.studentId}</strong></td>
-                <td>${log.action}</td>
-            `;
-            tbody.appendChild(tr);
+        // 1. Group logs by student
+        const groupedLogs = {};
+        const allLogs = Object.values(data).sort((a, b) => a.timestamp - b.timestamp); // Sort oldest to newest
+        
+        allLogs.forEach(log => {
+            if (!groupedLogs[log.studentId]) groupedLogs[log.studentId] = [];
+            groupedLogs[log.studentId].push(log);
         });
+        
+        // 2. Collapse contiguous identical actions into timeframes
+        for (const [studentId, logs] of Object.entries(groupedLogs)) {
+            const collapsed = [];
+            let current = null;
+            
+            for (const log of logs) {
+                if (!current) {
+                    current = { action: log.action, start: log.timestamp, end: log.timestamp };
+                } else if (current.action === log.action) {
+                    current.end = log.timestamp; // Extend timeframe instead of making a new log
+                } else {
+                    collapsed.push(current);
+                    current = { action: log.action, start: log.timestamp, end: log.timestamp };
+                }
+            }
+            if (current) collapsed.push(current);
+            
+            // 3. Render the row
+            const tr = document.createElement("tr");
+            
+            const nameTd = document.createElement("td");
+            nameTd.innerHTML = `<strong style="font-size: 16px;">${studentId}</strong>`;
+            nameTd.style.verticalAlign = "top";
+            nameTd.style.width = "200px";
+            
+            const eventsTd = document.createElement("td");
+            const eventsContainer = document.createElement("div");
+            eventsContainer.style.display = "flex";
+            eventsContainer.style.flexWrap = "wrap";
+            eventsContainer.style.gap = "10px";
+            
+            // Show newest events first
+            collapsed.reverse().forEach(event => {
+                const badge = document.createElement("div");
+                badge.style.background = "#f8fafc";
+                badge.style.border = "1px solid #cbd5e1";
+                badge.style.borderRadius = "6px";
+                badge.style.padding = "8px 12px";
+                badge.style.fontSize = "13px";
+                
+                const timeOpts = { hour: 'numeric', minute: '2-digit', second: '2-digit' };
+                const startStr = new Date(event.start).toLocaleTimeString([], timeOpts);
+                let timeStr = startStr;
+                
+                // Show a range if the repetitive event lasted longer than 1 second
+                if (event.end - event.start > 1000) {
+                    const endStr = new Date(event.end).toLocaleTimeString([], timeOpts);
+                    timeStr = `${startStr} - ${endStr}`;
+                }
+                
+                let actionColor = "#334155"; // Default gray
+                if (event.action.toLowerCase().includes("unlock")) actionColor = "#16a34a"; // Green
+                if (event.action.toLowerCase().includes("violation") || event.action.toLowerCase().includes("banned") || event.action.toLowerCase().includes("switched")) actionColor = "#dc2626"; // Red
+                
+                badge.innerHTML = `<div style="font-weight:bold; color:${actionColor}; margin-bottom:4px;">${event.action}</div>
+                                   <div style="color:#64748b; font-size:12px;">🕒 ${timeStr}</div>`;
+                eventsContainer.appendChild(badge);
+            });
+            
+            eventsTd.appendChild(eventsContainer);
+            tr.appendChild(nameTd);
+            tr.appendChild(eventsTd);
+            tbody.appendChild(tr);
+        }
     }
 
     // Interval to refresh offline timers
@@ -280,7 +356,7 @@
       <!-- Logs -->
       <div id="tab-logs" class="tab-content">
           <table class="log-table">
-              <thead><tr><th>Time</th><th>Student</th><th>Event</th></tr></thead>
+              <thead><tr><th>Student</th><th>Event Timeline</th></tr></thead>
               <tbody id="log-body"></tbody>
           </table>
       </div>
@@ -291,7 +367,13 @@
               <h3>Allowed Chrome Extensions</h3>
               <p>Enter the exact names of extensions allowed during tests (one per line). <br><i>Note: The extension itself automatically ignores "Formative Secure Mode".</i></p>
               <textarea id="extensions-input">GoGuardian
-GoGuardian License</textarea>
+GoGuardian License
+Certificate Enrollment for ChromeOS</textarea>
+              
+              <h3 style="margin-top: 20px;">Allowed Websites (Whitelist)</h3>
+              <p>Enter the exact domains or URLs students are allowed to visit (one per line). <br><i>Example: google.com, desmos.com</i></p>
+              <textarea id="websites-input">formative.com</textarea>
+
               <br><br>
               <button class="btn btn-blue" onclick="saveSettings()">Save Configuration</button>
           </div>
