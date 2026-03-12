@@ -45,15 +45,26 @@
     const logoutBtn = document.getElementById("logout-btn");
     const errorMsg = document.getElementById("error-msg");
 
-    // Catch errors from the redirect if any occurred
-    getRedirectResult(auth).catch((error) => {
+    // Catch errors from the redirect if any occurred when the page loads
+    console.log("Checking for redirect results...");
+    getRedirectResult(auth).then((result) => {
+        if (result) {
+            console.log("Successfully returned from Google redirect!", result);
+        }
+    }).catch((error) => {
         console.error("Redirect Login Error:", error);
         errorMsg.innerText = `Login error: ${error.message}`;
     });
 
     // Handle Login (Now using Redirect instead of Popup)
     loginBtn.addEventListener("click", () => {
-        signInWithRedirect(auth, provider);
+        console.log("Login button clicked! Attempting to redirect to Google...");
+        errorMsg.innerText = "Connecting to Google..."; // Visual feedback that the button works
+        
+        signInWithRedirect(auth, provider).catch((error) => {
+            console.error("Failed to initiate redirect:", error);
+            errorMsg.innerText = `Redirect failed: ${error.message}`;
+        });
     });
 
     // Handle Logout
