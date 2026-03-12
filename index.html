@@ -16,7 +16,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
     // --- CONFIGURATION ---
     const firebaseConfig = {
@@ -45,11 +45,15 @@
     const logoutBtn = document.getElementById("logout-btn");
     const errorMsg = document.getElementById("error-msg");
 
-    // Handle Login
+    // Catch errors from the redirect if any occurred
+    getRedirectResult(auth).catch((error) => {
+        console.error("Redirect Login Error:", error);
+        errorMsg.innerText = `Login error: ${error.message}`;
+    });
+
+    // Handle Login (Now using Redirect instead of Popup)
     loginBtn.addEventListener("click", () => {
-        signInWithPopup(auth, provider).catch(error => {
-            console.error("Login failed", error);
-        });
+        signInWithRedirect(auth, provider);
     });
 
     // Handle Logout
