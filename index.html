@@ -47,7 +47,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getDatabase, ref, onValue, set, push, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-    import { getAuth, signInWithPopup, signInWithEmailAndPassword, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    import { getAuth, signInWithRedirect, getRedirectResult, signInWithEmailAndPassword, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
     // --- CONFIGURATION ---
     const firebaseConfig = {
@@ -69,19 +69,34 @@
     const emailLoginBtn = document.getElementById("email-login-btn");
     const errorMsg = document.getElementById("error-msg");
     let recordedLogs = [];
+    let dashboardInitialized = false;
+    let latestStudentsData = null;
 
-    // Login via Popup
+    // Handle redirect result when page reloads after Google sign-in
+    getRedirectResult(auth).then(result => {
+        if (result && result.user) {
+            errorMsg.innerText = "Completing sign-in...";
+            errorMsg.style.color = "orange";
+        }
+    }).catch(err => {
+        console.error(err);
+        errorMsg.innerText = "Google Login failed: " + err.message;
+        errorMsg.style.color = "red";
+    });
+
+    // Re-enable the Google sign-in button if the user navigates back without completing sign-in
+    window.addEventListener("pageshow", () => { loginBtn.disabled = false; });
+
+    // Login via Redirect (works on GitHub Pages where popups are blocked)
     loginBtn.addEventListener("click", () => {
-        errorMsg.innerText = "Connecting to Google...";
+        errorMsg.innerText = "Redirecting to Google...";
         errorMsg.style.color = "orange";
-        signInWithPopup(auth, provider).catch(err => {
+        loginBtn.disabled = true;
+        signInWithRedirect(auth, provider).catch(err => {
             console.error(err);
-            if(err.message.includes("Cross-Origin")) {
-                errorMsg.innerText = "Your web server's COOP security headers blocked the Google Popup. Please use the Email login below.";
-            } else {
-                errorMsg.innerText = "Google Login failed: " + err.message;
-            }
+            errorMsg.innerText = "Google Login failed: " + err.message;
             errorMsg.style.color = "red";
+            loginBtn.disabled = false;
         });
     });
 
@@ -138,6 +153,9 @@
     };
 
     function initDashboard() {
+        if (dashboardInitialized) return;
+        dashboardInitialized = true;
+
         // 1. Listen to Settings
         onValue(ref(db, 'settings'), (snapshot) => {
             const data = snapshot.val();
@@ -151,10 +169,10 @@
             }
         });
 
-        // 2. Listen to Students
+        // 2. Listen to Students — store latest snapshot for timer refreshes
         onValue(ref(db, 'students'), (snapshot) => {
-            const data = snapshot.val() || {};
-            renderStudents(data);
+            latestStudentsData = snapshot.val() || {};
+            renderStudents(latestStudentsData);
         });
 
         // 3. Listen to Logs
@@ -313,8 +331,8 @@
         }
     }
 
-    // Interval to refresh offline timers
-    setInterval(() => { if(document.getElementById("dashboard-screen").style.display === "block") initDashboard(); }, 10000);
+    // Refresh offline timers every 10 seconds using cached data — no new Firebase listeners
+    setInterval(() => { if (latestStudentsData) renderStudents(latestStudentsData); }, 10000);
   </script>
 </head>
 <body>
